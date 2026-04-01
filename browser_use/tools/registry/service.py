@@ -346,7 +346,7 @@ class Registry(Generic[Context]):
 		events_logger = get_current_logger()
 		action = self.registry.actions[action_name]
 		node = await browser_session.get_dom_element_by_index(params.get("index")) or {}
-		elements_data = []
+		element = {}
 		if node:
 			# Get bounding box using absolute position (includes iframe translations) if available
 			if node.absolute_position:
@@ -373,11 +373,11 @@ class Registry(Generic[Context]):
 						if hasattr(node, 'get_all_children_text')
 						else node.node_value[:50],
 					}
-					elements_data.append(element)
+					# elements_data.append(element)
 		# print(elements_data)
 		params_data = {
 			**params,
-			"elements": elements_data
+			"elements": element
 		}
 		# self.log_event({
 		# 	"event": "event_start",
