@@ -339,6 +339,7 @@ class Registry(Generic[Context]):
 		sensitive_data: dict[str, str | dict[str, str]] | None = None,
 		available_file_paths: list[str] | None = None,
 		extraction_schema: dict | None = None,
+		step_num : int | None = None
 	) -> Any:
 		"""Execute a registered action with simplified parameter handling"""
 		if action_name not in self.registry.actions:
@@ -380,7 +381,8 @@ class Registry(Generic[Context]):
 		
 		events_logger.log_start(
 			tool=action_name,
-			action=params_data
+			action=params_data,
+			step_num=step_num
 		)
 		try:
 			# Create the validated Pydantic model
@@ -433,13 +435,13 @@ class Registry(Generic[Context]):
 				res = await action.function(params=validated_params, **special_context)
 			except Exception as e:
 				raise
-			events_logger.log_end(tool=action_name, status="success")
+			events_logger.log_end(tool=action_name, status="success", step_num=step_num)
 			return res
 
 		except ValueError as e:
 			# Preserve ValueError messages from validation
 
-			events_logger.log_end(action_name, "failure", str(e))
+			events_logger.log_end(action_name, "failure", str(e), step_num=step_num)
 			if 'requires browser_session but none provided' in str(e) or 'requires page_extraction_llm but none provided' in str(
 				e
 			):
@@ -448,11 +450,11 @@ class Registry(Generic[Context]):
 				raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 		except TimeoutError as e:
 
-			events_logger.log_end(action_name, "failure", str(e))
+			events_logger.log_end(action_name, "failure", str(e), step_num=step_num)
 			raise RuntimeError(f'Error executing action {action_name} due to timeout.') from e
 		except Exception as e:
 
-			events_logger.log_end(action_name, "failure", str(e))
+			events_logger.log_end(action_name, "failure", str(e), step_num=step_num)
 			raise RuntimeError(f'Error executing action {action_name}: {str(e)}') from e
 
 	def _log_sensitive_data_usage(self, placeholders_used: set[str], current_url: str | None) -> None:

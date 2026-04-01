@@ -1062,7 +1062,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			# Phase 2: Get model output and execute actions
 			await self._get_next_action(browser_state_summary)
-			await self._execute_actions()
+			await self._execute_actions(step_num=step_info.step_number)
 
 			# Phase 3: Post-processing
 			await self._post_process()
@@ -1198,12 +1198,12 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# check again if Ctrl+C was pressed before we commit the output to history
 		await self._check_stop_or_pause()
 
-	async def _execute_actions(self) -> None:
+	async def _execute_actions(self, step_num: int | None = None) -> None:
 		"""Execute the actions from model output"""
 		if self.state.last_model_output is None:
 			raise ValueError('No model output to execute actions from')
 
-		result = await self.multi_act(self.state.last_model_output.action)
+		result = await self.multi_act(self.state.last_model_output.action, step_num)
 		self.state.last_result = result
 
 	async def _post_process(self) -> None:
@@ -2696,7 +2696,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	
 	@time_execution_async('--multi_act')
 	@observe(name='multi_act', as_type='span')
-	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
+	async def multi_act(self, actions: list[ActionModel], step_num: int | None = None) -> list[ActionResult]:
 		"""Execute multiple actions with page-change guards.
 
 		Two layers of protection prevent executing actions against stale DOM:
@@ -2756,6 +2756,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					sensitive_data=self.sensitive_data,
 					available_file_paths=self.available_file_paths,
 					extraction_schema=self.extraction_schema,
+					step_num=step_num
 				)
 
 				if result.error:
