@@ -365,7 +365,8 @@ class Registry(Generic[Context]):
 						'is_clickable': node.snapshot_node.is_clickable if node.snapshot_node else True,
 						'is_scrollable': getattr(node, 'is_scrollable', False),
 						'tag_name': node.tag_name,
-						'node_name': node.ax_node_name,
+						'role': node.ax_node.role,
+						'node_name': node.ax_node.name,
 						'xpath': node.xpath,
 						'text_content': node.get_all_children_text()[:50]
 						if hasattr(node, 'get_all_children_text')
