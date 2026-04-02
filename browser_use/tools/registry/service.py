@@ -354,9 +354,9 @@ class Registry(Generic[Context]):
 				# Use absolute position which includes iframe coordinate translations
 				rect = node.absolute_position
 				bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
-
 				# Only include elements with valid bounding boxes
 				if bbox and bbox.get('width', 0) > 0 and bbox.get('height', 0) > 0:
+					ax_node = node.ax_node
 					element = {
 						'x': bbox['x'],
 						'y': bbox['y'],
@@ -366,8 +366,10 @@ class Registry(Generic[Context]):
 						'is_clickable': node.snapshot_node.is_clickable if node.snapshot_node else True,
 						'is_scrollable': getattr(node, 'is_scrollable', False),
 						'tag_name': node.tag_name,
-						'role': node.ax_node.role,
-						'node_name': node.ax_node.name,
+						'role': ax_node.role,
+						'node_name': ax_node.name,
+						'description': ax_node.description,
+						'attributes': node.attributes,
 						'xpath': node.xpath,
 						'text_content': node.get_all_children_text()[:50]
 						if hasattr(node, 'get_all_children_text')
