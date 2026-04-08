@@ -18,22 +18,22 @@ class EventLogger:
     def step(self) -> int:
         return self._counter[0]
 
-    def log_start(self, tool: str, action: dict | None = None) -> int:
+    def log_start(self, tool: str, action: dict | None = None, step_num: int | None = None) -> int:
         """Log event_start and return the current step number."""
         self._write({
             "event": "event_start",
-            "step": self.step,
+            "step": step_num or self.step,
             "tool": tool,
             "action": action or {},
             "timestamp": time.time(),
         })
         return self.step
 
-    def log_end(self, tool: str, status: str = "success", error: str | None = None) -> int:
+    def log_end(self, tool: str, status: str = "success", error: str | None = None, step_num: int | None = None) -> int:
         """Log event_end, increment the step counter, and return the step number."""
         entry = {
             "event": "event_end",
-            "step": self.step,
+            "step": step_num or self.step,
             "tool": tool,
             "status": status,
             "timestamp": time.time(),
