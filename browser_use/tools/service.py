@@ -1181,7 +1181,7 @@ You will be given a query and the markdown of a webpage that has been filtered t
 					include_extracted_content_only_once = True
 
 				logger.info(f'📄 {memory}')
-				resuult =  ActionResult(
+				result =  ActionResult(
 					extracted_content=extracted_content,
 					include_extracted_content_only_once=include_extracted_content_only_once,
 					long_term_memory=memory,
