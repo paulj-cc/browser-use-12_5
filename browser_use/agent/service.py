@@ -128,6 +128,7 @@ Context = TypeVar('Context')
 
 AgentHookFunc = Callable[['Agent'], Awaitable[None]]
 
+from browser_use.agent.validator_agent_pol.service import ValidatorAgent, ValidatorSettings
 
 class Agent(Generic[Context, AgentStructuredOutput]):
 	@time_execution_sync('--init')
@@ -208,8 +209,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		max_clickable_elements_length: int = 40000,
 		_url_shortening_limit: int = 25,
 		enable_signal_handler: bool = True,
+		use_validator: bool = False,
+		validator_agent: ValidatorAgent | None = None,
 		**kwargs,
 	):
+     
+		self.use_validator = use_validator
+		self.validator_agent: ValidatorAgent = validator_agent
+		self.validation_results = []
+   
 		# Validate llm_screenshot_size
 		if llm_screenshot_size is not None:
 			if not isinstance(llm_screenshot_size, tuple) or len(llm_screenshot_size) != 2:
@@ -2430,11 +2438,39 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		Execute a single step with timeout.
 
 		Returns:
-			bool: True if task is done, False otherwise
+			bool: True if task is done, False otherwisea
 		"""
 		if on_step_start is not None:
 			await on_step_start(self)
 
+		if self.use_validator:
+			async def validate_progress() -> None:
+				if (step % self.validator_agent.settings.validate_every_n_steps or step <= 1) or self.history.is_done():
+					return	
+				img_paths = [p for p in self.history.screenshot_paths() if p]
+			
+				result = await self.validator_agent.validate_periodic(
+					number=step,
+					history=self.history,
+					img_paths = img_paths
+				)
+				self.validation_results.append(result)
+				print(f"""[VALIDATOR RESULT] ⚖️ Validator feedback:
+Feedback:
+- Progress summary: {self.validation_results[-1].feedback.progress_summary}
+- Step suggestion: {self.validation_results[-1].feedback.next_steps_suggestion}
+- Recovery instructions: {self.validation_results[-1].feedback.recovery_instruction}
+- Issues: {self.validation_results[-1].feedback.issues}
+Should Continue: {self.validation_results[-1].should_continue}
+Reason: {self.validation_results[-1].reason}""")
+    
+				if self.validation_results[-1].feedback.issues:
+					guidance = f"""VALIDATOR FEEDBACK (Step {step}):\n\nIssues Detected:\n{chr(10).join(f"- [{issue.severity}] {issue.category}: {issue.description}" 
+						for issue in self.validation_results[-1].feedback.issues)}\n\nProgress So Far: {self.validation_results[-1].feedback.progress_summary}\n\nNext Steps: {self.validation_results[-1].feedback.next_steps_suggestion}\n\n{f"Recovery: {self.validation_results[-1].feedback.recovery_instruction}" if self.validation_results[-1].feedback.recovery_instruction else ""}"""
+					self._message_manager._add_context_message(UserMessage(content=guidance))
+					self.logger.warning(f"Validator: {self.validation_results[-1].reason}")
+			await validate_progress()
+				
 		await self._demo_mode_log(
 			f'Starting step {step + 1}/{max_steps}',
 			'info',
@@ -2442,7 +2478,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		)
 
 		self.logger.debug(f'🚶 Starting step {step + 1}/{max_steps}...')
-
+		
 		try:
 			await asyncio.wait_for(
 				self.step(step_info),
@@ -2460,6 +2496,66 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# been skipped or returned early due to the cancellation.
 			if self.state.n_steps == step + 1:
 				self.state.n_steps += 1
+    
+		if self.use_validator:
+			async def validate_done() -> None:
+				if not self.history.is_done():
+					return
+				# print(f'{"="*30}AGENT HE STORY{"="*30}')
+				# for h in self.history.history:
+				# 	print(h)
+				# print(f'{"="*30}AGENT HE STORY{"="*30}')
+				img_paths = [p for p in self.history.screenshot_paths() if p]
+				result = await self.validator_agent.validate_final(
+					number=step,
+					history=self.history,
+					img_paths = img_paths
+				)
+				self.validation_results.append(result)
+				print(f"""[VALIDATOR RESULT] ⚖️ Validator feedback:
+Feedback:
+- Progress summary: {self.validation_results[-1].feedback.progress_summary}
+- Step suggestion: {self.validation_results[-1].feedback.next_steps_suggestion}
+- Recovery instructions: {self.validation_results[-1].feedback.recovery_instruction}
+- Issues: {self.validation_results[-1].feedback.issues}
+Should Continue: {self.validation_results[-1].should_continue}
+Reason: {self.validation_results[-1].reason}""")
+    
+				if self.validation_results[-1].feedback.issues and not self.validation_results[-1].validation_passed:
+					guidance = f"""🚨 VALIDATION FAILED - MUST FIX BEFORE DONE
+
+Issues Detected:
+{chr(10).join(f"- [{issue.severity}] {issue.category}: {issue.description}" 
+	for issue in self.validation_results[-1].feedback.issues)}
+
+Progress So Far: {self.validation_results[-1].feedback.progress_summary}
+
+Next Steps: {self.validation_results[-1].feedback.next_steps_suggestion}
+
+{f"Recovery: {self.validation_results[-1].feedback.recovery_instruction}" if self.validation_results[-1].feedback.recovery_instruction else ""}
+
+⚠️ IMPORTANT: You called done() but it was REJECTED by validation.
+You MUST do the following:
+1. Take action to fix each issue above
+2. Verify the fixes work
+3. ONLY THEN call done() again with the corrected state
+
+Your previous done() attempt is VOID and will not count."""
+					self.history.history[-1].result[-1].is_done = False
+					self.history.history[-1].result[-1].long_term_memory = (
+						f"⚠️ VALIDATION FAILED - Your done() was rejected. Errors: {len(self.validation_results[-1].feedback.issues)}. "
+						f"Fix: {self.validation_results[-1].feedback.next_steps_suggestion[:100]}"
+					)
+					from browser_use.agent.message_manager.views import HistoryItem
+					validation_history_item = HistoryItem(
+						step_number=step,
+						error=f"<validation_feedback>\n{guidance}\n</validation_feedback>"
+					)
+					self._message_manager.state.agent_history_items.append(validation_history_item)
+					self.logger.warning(f"Validator: {self.validation_results[-1].reason}")
+					print(f'[VALIDATOR OVERRIDE] Agent done override: is_done from True to False - {len(self.validation_results[-1].feedback.issues)} issues detected')
+     	
+			await validate_done()
 
 		if on_step_end is not None:
 			await on_step_end(self)
