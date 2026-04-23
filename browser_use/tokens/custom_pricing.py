@@ -71,6 +71,15 @@ CUSTOM_MODEL_PRICING: dict[str, dict[str, Any]] = {
 		'max_tokens': None,  # Not specified
 		'max_input_tokens': None,  # Not specified
 		'max_output_tokens': None,  
+	},
+	"vertex/gemini-3-flash-preview": {
+		'input_cost_per_token': 0.50 / 1_000_000,
+		'output_cost_per_token': 3.00 / 1_000_000,
+		'cache_read_input_token_cost': 0.05 / 1_000_000,
+		'cache_creation_input_token_cost': 0.083 / 1_000_000,
+		'max_tokens': None,  # Not specified
+		'max_input_tokens': None,  # Not specified
+		'max_output_tokens': None,
 	}
 }
 CUSTOM_MODEL_PRICING['bu-latest'] = CUSTOM_MODEL_PRICING['bu-1-0']
