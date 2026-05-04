@@ -327,6 +327,88 @@ class Registry(Generic[Context]):
 
 		return decorator
 
+	def _find_semantic_container(self, node) -> dict | None:
+		"""
+		Find the semantic container/scope for a DOM node.
+		
+		Traverses up the DOM tree to find the first semantic ancestor element or ARIA container role.
+		Semantic elements are prioritized over ARIA roles.
+		
+		Args:
+			node: The target EnhancedDOMTreeNode to find a container for
+			
+		Returns:
+			Dictionary with container info or None if no valid container found
+		"""
+		if not node or not node.parent_node:
+			return None
+			
+		# Semantic HTML elements to look for
+		semantic_elements = {'aside', 'nav', 'main', 'header', 'footer', 'section', 'article', 'form', 'dialog'}
+		
+		# ARIA roles to fall back to (if no semantic ancestor found)
+		aria_container_roles = {'region', 'navigation', 'contentinfo', 'complementary', 'main', 'menu'}
+		
+		current = node.parent_node
+		level = 0
+		max_levels = 5
+		
+		# Traverse up the tree looking for semantic ancestor or ARIA container
+		while current and level < max_levels and current.tag_name.lower() != 'body':
+			tag_name = current.tag_name.lower()
+			
+			# Check for semantic HTML element
+			if tag_name in semantic_elements:
+				return {
+					'element_name': current.node_name,
+					'tag': current.tag_name,
+					'attributes': {
+						'name': current.attributes.get('name') if current.attributes else None,
+						'role': current.attributes.get('role') if current.attributes else None,
+						'id': current.attributes.get('id') if current.attributes else None,
+						'class': current.attributes.get('class') if current.attributes else None,
+					},
+					'text_preview': current.get_all_children_text()[:50] if current.children_nodes else '',
+					'xpath': current.xpath,
+				}
+			
+			# Check for ARIA container role as fallback
+			if current.attributes and current.attributes.get('role') in aria_container_roles:
+				return {
+					'element_name': current.node_name,
+					'tag': current.tag_name,
+					'attributes': {
+						'name': current.attributes.get('name') if current.attributes else None,
+						'role': current.attributes.get('role') if current.attributes else None,
+						'id': current.attributes.get('id') if current.attributes else None,
+						'class': current.attributes.get('class') if current.attributes else None,
+					},
+					'text_preview': current.get_all_children_text()[:50] if current.children_nodes else '',
+					'xpath': current.xpath,
+				}
+			
+			current = current.parent_node
+			level += 1
+		
+		# If no semantic ancestor found, return immediate parent (unless it's body)
+		if node.parent_node and node.parent_node.tag_name.lower() != 'body':
+			parent = node.parent_node
+			return {
+				'element_name': parent.node_name,
+				'tag': parent.tag_name,
+				'attributes': {
+					'name': parent.attributes.get('name') if parent.attributes else None,
+					'role': parent.attributes.get('role') if parent.attributes else None,
+					'id': parent.attributes.get('id') if parent.attributes else None,
+					'class': parent.attributes.get('class') if parent.attributes else None,
+				},
+				'text_preview': parent.get_all_children_text()[:50] if parent.children_nodes else '',
+				'xpath': parent.xpath,
+			}
+		
+		# Return None if only parent is body or no parent exists
+		return None
+
 	@time_execution_async('--execute_action')
 	@observe(name='execute_action', as_type="span")
 	async def execute_action(
@@ -358,10 +440,6 @@ class Registry(Generic[Context]):
 				if bbox and bbox.get('width', 0) > 0 and bbox.get('height', 0) > 0:
 					ax_node = node.ax_node
 					element = {
-						'x': bbox['x'],
-						'y': bbox['y'],
-						'width': bbox['width'],
-						'height': bbox['height'],
 						'element_name': node.node_name,
 						'is_clickable': node.snapshot_node.is_clickable if node.snapshot_node else True,
 						'is_scrollable': getattr(node, 'is_scrollable', False),
@@ -375,16 +453,35 @@ class Registry(Generic[Context]):
 						if hasattr(node, 'get_all_children_text')
 						else node.node_value[:50],
 					}
+			# Find semantic container for the element
+			container_node = self._find_semantic_container(node)
+			if container_node:
+				element['container_node'] = container_node
+
+			if node.children_nodes:
+				child_nodes = []
+				for idx, child in enumerate(node.children_nodes[:3]):
+					child_info = {
+						'index': idx,
+						'tag': child.tag_name,
+						'attributes': {
+							'id': child.attributes.get('id') if child.attributes else None,
+							'class': child.attributes.get('class') if child.attributes else None,
+						},
+						'text_content': child.get_all_children_text()[:50] if child.children else child.node_value[:50],
+					}
+					child_nodes.append(child_info)
+				element['children_node'] = child_nodes
 					
 		params_data = {
 			**params,
-			"element": element
+			"element": element,
 		}
 		
 		events_logger.log_start(
 			tool=action_name,
 			action=params_data,
-			step_num=step_num
+			step_num=step_num,
 		)
 		try:
 			# Create the validated Pydantic model
