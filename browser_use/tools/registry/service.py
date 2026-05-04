@@ -374,6 +374,8 @@ class Registry(Generic[Context]):
 						'text_content': node.get_all_children_text()[:50]
 						if hasattr(node, 'get_all_children_text')
 						else node.node_value[:50],
+						"parent": node.parent,
+						"children": node.children
 					}
 					
 		params_data = {
